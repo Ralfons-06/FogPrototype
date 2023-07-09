@@ -1,75 +1,120 @@
 import zmq
-from collections import deque
+import random
 import time
+from collections import deque
+from virtual_sensor import VirtualSensor
+import config
+from multiprocessing import Process
 
 
-# Set up ZeroMQ context and socket
-context = zmq.Context()
-socket = context.socket(zmq.REQ)
+class MessageBroker:
 
-# Connect to the server
-socket.connect("tcp://localhost:5555")
-print("listening")
-# Create a queue to store data for later transmission
-data_queue = deque()
-failed_data_queue = deque()
-i = 0
+    def __init__(self):
+        # Create ZeroMQ context & socket of type REQ
+        self.context = zmq.Context()
+        self.server_socket = self.context.socket(zmq.REQ)
 
-# Function to send sensor data to the server
-def send_sensor_data(data):
-    socket.send(data.encode())
-    response = socket.recv().decode()
-    print("Received response from server:", response)
+        # Connect socket to server
+        self.server_socket.connect("tcp://localhost:5555")
 
-# Function to process the server's processed sensor data
-def process_server_response(response):
-    # Replace this with your processing logic for the server's response
-    print("Processed server response:", response)
+        # Create a queue to store data for later transmission
+        self.data_queue = deque()
+        self.failed_data_queue = deque()
+        self.i = 0
 
-# Fake sensor data generator
-def generate_sensor_data():
-    # Replace this with your actual sensor data generation logic
-    return str(i) + "Sensor Data"
+        # init sensor ports
+        self.sensor_ports = self.find_active_sensor_ports()
+        self.sensor_socket = self.context.socket(zmq.SUB)
 
-while True:
-    try:
-        # Generate sensor data
-        data = generate_sensor_data()
-        print(data)
+    def find_active_sensor_ports(self):
+        print("START: Looking for active sensors...")
+        sensor_ports = {}
+        current_conf = config.VirtualSensorConfig.SENSORS
+        for sensor in current_conf.keys():
+            sensor_ports[sensor] = current_conf.get(sensor).get("Port")
+            print(f"Found sensor {sensor.upper()} with port {current_conf.get(sensor).get('Port')}")
+        print("END: Looking for active sensors...")
+        return sensor_ports
 
-        # Send sensor data to the server
-        send_sensor_data(data)
+    def start(self):
+        # Connect client and sensors
+        # sensor_socket = self.context.socket(zmq.SUB)
 
-        # Check if there is any failed data to send
-        if failed_data_queue:
-            while failed_data_queue:
-                failed_data = failed_data_queue.popleft()
-                send_sensor_data(failed_data)
+        for sensor in self.sensor_ports.items():
+            self.sensor_socket.connect(f"tcp://localhost:%s" % sensor[1])
+            print(f"Successfully connected to sensor {sensor[0]} on port {sensor[1]}")
+        self.sensor_socket.subscribe(b"")
 
-        time.sleep(2)
+        current_message = "Initialize"
 
-    except zmq.ZMQError as e:
-        print("Error occurred:", e)
-        # Handle disconnection or crash here, store data in the queue
-        data_queue.append(data)
+        # TODO: multithread receiving and sending so that message broker can receive and send at the same time
+        while True:
+            # Listen to sensor ports for incoming data
+            # Send data to the server
+            # TODO: multihreading
+            try:
+                # Check if there is any queued data to send
+                if self.data_queue:
+                    queued_data = self.data_queue.popleft()
 
-    except KeyboardInterrupt:
-        # Cleanly exit the program on Ctrl+C
-        socket.close()
-        context.term()
-        break
+                    try:
+                        self.server_socket.send_string(queued_data)
+                    except zmq.ZMQError:
+                        print("Failed to send queued data:", queued_data)
+                        self.failed_data_queue.append(queued_data)
 
-    else:
-        # Check if there is any queued data to send
-        if data_queue:
-            while data_queue:
-                queued_data = data_queue.popleft()
-                try:
-                    send_sensor_data(queued_data)
-                except zmq.ZMQError:
-                    print("Failed to send queued data:", queued_data)
-                    failed_data_queue.append(queued_data)
+                else:
+                    # Generate data
+                    # message = "Current temperature: {:.1f}°C and Air Quality: {:.0f}".format(temperature_sensor(), air_quality_sensor())
 
-                # Receive and process the server's response
-                response = socket.recv().decode()
-                process_server_response(response)
+                    current_message = sensor_socket.recv_string()
+                    print(current_message)
+
+                    # Send sensor data to the server
+                    self.server_socket.send_string(current_message)
+
+                # Receive the server's response
+                response = self.server_socket.recv_string()
+                print("Server response: {}".format(response))
+
+                # Check if the user wants to quit
+                if current_message.lower() == "quit":
+                    print("Quitting...")
+                    break
+
+                time.sleep(2)
+
+            except zmq.ZMQError as e:
+                print("Error occurred:", e)
+                # Handle disconnection or crash here, store data in the queue
+                # self.data_queue.append(temperature_sensor(), air_quality_sensor())
+                self.data_queue.append(current_message)
+
+            except ValueError as e:
+                print("Input Error occurred: {}".format(str(e)))
+                # Handle the error as needed
+
+            except KeyboardInterrupt:
+                # Cleanly exit the program on Ctrl+C
+                self.server_socket.close()
+                sensor_socket.close()
+                self.context.term()
+                break
+
+    def receive_data_from_sens(self):
+        while True:
+            current_message = sensor_socket.recv_string()
+            print(current_message)
+            self.data_queue.append(current_message)
+
+
+    def send_data_to_cloud_comp(self):
+        while True:
+            if self.data_queue:
+                self.server_socket.send_string(self.data_queue.popleft())
+
+
+
+if __name__ == "__main__":
+    mb = MessageBroker()
+    mb.start()
