@@ -1,12 +1,14 @@
 import zmq
+import random
 from collections import deque
 
-# Set up ZeroMQ context and socket
+# Create ZeroMQ context & socket of type REP 
 context = zmq.Context()
 socket = context.socket(zmq.REP)
 
-# Bind the socket to a specific port
+# Bind socket to a specific port
 socket.bind("tcp://*:5555")
+print("Server is listening")
 
 # Create a queue to store data for later processing
 data_queue = deque()
