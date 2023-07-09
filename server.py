@@ -1,5 +1,4 @@
 import zmq
-import random
 from collections import deque
 
 # Create ZeroMQ context & socket of type REP 
