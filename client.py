@@ -6,7 +6,6 @@ from threading import Thread
 from threading import Lock
 
 
-
 class Client:
 
     def __init__(self):
@@ -123,19 +122,36 @@ class Client:
         # TODO: Process Server Response
         while True:
             try:
-                print("B")
                 # Check if there is any failed data to send
                 if self.failed_data_queue:
-                    print("Sending failed data...")
+                    print("Retry sending failed attempts...")
                     while self.failed_data_queue:
                         # TODO: Check if data should be send one after one or in a batch
-                        failed_data = self.failed_data_queue.pop()
-                        self.server_socket.send_string(failed_data)
-                        response = self.server_socket.recv().decode()
-                        print("Received response from server:", response)
+                        current_message = self.failed_data_queue.pop()
+                        self.server_socket.send_string(current_message)
+
+                        with self.final_processing_queue_lock:
+                            old_size = len(self.final_processing_queue)
+
+                        # Run a thread to receive the server's response if it is available it will write the response to
+                        # the final_processing_queue
+                        server_response_thread = Thread(target=self.receive_data_from_server)
+                        server_response_thread.start()
+                        # TODO: Define duration in config
+                        duration = 5
+                        server_response_thread.join(timeout=duration)
+
+                        # Check if response was received
+                        with self.final_processing_queue_lock:
+                            if len(self.final_processing_queue) > old_size:
+                                server_response = self.final_processing_queue.popleft()
+                                self.process_server_response(server_response)
+                            else:
+                                self.failed_data_queue.insert(0, current_message)
+                                print("Server still not available")
+
                     print("All failed data sent successfully")
                 elif self.data_queue:
-                    print("A")
                     with self.data_queue_lock:
                         current_message = self.data_queue.popleft()
 
@@ -154,16 +170,17 @@ class Client:
                             server_response = self.final_processing_queue.popleft()
                             self.process_server_response(server_response)
                         else:
-                            print("Function timed out.")
+                            print("Server was not reached in time, storing data in queue for later processing.")
                             with self.data_queue_lock:
                                 self.failed_data_queue.append(current_message)
                                 self.failed_data_queue.extend(self.data_queue)
                                 self.data_queue.clear()
 
             except zmq.ZMQError as e:
-                print("Error occurred:", e)
+                print("Server was not reached:", e)
                 # Handle disconnection or crash here, store data in the queue
                 with self.data_queue_lock:
+                    self.failed_data_queue.append(current_message)
                     self.failed_data_queue.extend(self.data_queue)
                     self.data_queue.clear()
             time.sleep(1)
