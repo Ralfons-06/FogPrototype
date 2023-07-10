@@ -13,7 +13,7 @@ class VirtualSensorConfig():
             'Coordinates': [0, 1]},
         'humidity': {
             'Port': 5558,
-            'Rnage': [0, 100],
+            'Range': [0, 100],
             'Interval': 5,
             'Coordinates': [1, 1]}
     }
