@@ -1,21 +1,47 @@
 import zmq
 from collections import deque
 
-# Set up ZeroMQ context and socket
+# Create ZeroMQ context & socket of type REP 
 context = zmq.Context()
 socket = context.socket(zmq.REP)
 
-# Bind the socket to a specific port
+# Bind socket to a specific port
 socket.bind("tcp://*:5555")
+print("Server is listening")
 
 # Create a queue to store data for later processing
 data_queue = deque()
 failed_data_queue = deque()
 
+
 # Function to process received sensor data
-def process_sensor_data(data):
+def process_sensor_data(received_data):
     # Replace this with your actual sensor data processing logic
-    return "Processed Data"
+    topic = received_data.split(" ")[0]
+    value = int(received_data.split(" ")[1])
+    match topic.lower():
+        case "temperature":
+            if value < 0:
+                return "Too cold"
+            elif value > 30:
+                return "Too hot"
+            else:
+                return "Temperature OK"
+        case "air_quality":
+            if value > 50:
+                return "Bad air quality"
+            else:
+                return "Air quality OK"
+        case "humidity":
+            if value > 80:
+                return "Too humid"
+            elif value < 30:
+                return "Too dry"
+            else:
+                return "Humidity OK"
+        case _:
+            return "Unknown topic"
+
 
 while True:
     try:
