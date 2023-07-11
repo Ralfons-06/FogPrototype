@@ -50,7 +50,7 @@ while True:
 
         # Process the received sensor data
         processed_data = process_sensor_data(data)
-
+        print(f"Response send successfully: {processed_data}")
         # Send the processed data back to the client
         socket.send(processed_data.encode())
 
@@ -59,6 +59,7 @@ while True:
             while failed_data_queue:
                 failed_data = failed_data_queue.popleft()
                 processed_data = process_sensor_data(failed_data)
+                print(f"Response send successfully: {processed_data}")
                 # Send the processed data back to the client
                 socket.send(processed_data.encode())
 
@@ -66,6 +67,7 @@ while True:
         print("Error occurred:", e)
         # Handle disconnection or crash here, queue the data for later processing
         data_queue.append(data)
+        print("Client was not reached")
 
     except KeyboardInterrupt:
         # Cleanly exit the program on Ctrl+C
